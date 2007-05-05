@@ -117,7 +117,7 @@ class fstab:
 		"""
 		return self.entries.has_key(device)
 
-class halvm:
+class HalVM:
 	"""A simple HAL/DBUS volume manager
 	"""
 	def __init__(self):
@@ -130,30 +130,14 @@ class halvm:
 		# Cleaning up
 		for dir in os.listdir(self.mountpath):
 			self.cleanup_mountpoint(os.path.join(self.mountpath, dir))
-				
-		# Connect to the DBUS
-		self.bus = dbus.SystemBus()
 
-		# Add existing devices
-		logger.debug("Adding existing devices...")
-		self.hal_manager_obj = self.bus.get_object("org.freedesktop.Hal", "/org/freedesktop/Hal/Manager")
-		self.hal_manager     = dbus.Interface(self.hal_manager_obj, "org.freedesktop.Hal.Manager")
-		for device_udi in self.hal_manager.GetAllDevices():
-			obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
-			if not obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
-				continue
-			
-			props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
-			if not props["volume.is_mounted"]:
-				logger.debug("'%(info.udi)s' is not mounted" % props)
-				continue
-			
-			logger.debug("'%(info.udi)s' is mounted at '%(volume.mount_point)s'" % props)
-			self.mounted_devices[device_udi]=props['volume.mount_point']
 		return
 	
 	def run(self):
 		logger=logging.getLogger('halvm')
+
+		# Connect to the DBUS
+		self.bus = dbus.SystemBus()
 
 		# Setup the signal handler for the DeviceAdd signal from HAL
 		logger.debug("Registering DeviceAdd signal receiver...")
@@ -176,6 +160,22 @@ class halvm:
 					None,
 					path_keyword="device_udi")
 
+		# Add existing devices
+		logger.debug("Adding existing devices...")
+		self.hal_manager_obj = self.bus.get_object("org.freedesktop.Hal", "/org/freedesktop/Hal/Manager")
+		self.hal_manager     = dbus.Interface(self.hal_manager_obj, "org.freedesktop.Hal.Manager")
+		for device_udi in self.hal_manager.GetAllDevices():
+			obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
+			if not obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
+				continue
+			
+			props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
+			if not props["volume.is_mounted"]:
+				logger.debug("'%(info.udi)s' is not mounted" % props)
+				continue
+			
+			logger.debug("'%(info.udi)s' is mounted at '%(volume.mount_point)s'" % props)
+			self.mounted_devices[device_udi]=props['volume.mount_point']
 		
 		# Enter the mainloop
 		logger.debug("Entering mainloop...")
@@ -254,11 +254,12 @@ class halvm:
 				return
 			
 			# Try to create a suitable mountpoint
-			if props.has_key("volume.policy.desired_mount_point"):
-				mountpoint=os.path.join(self.mountpath, props["volume.policy.desired_mount_point"])
-			else:
-				mountpoint=os.path.join(self.mountpath, props["block.device"].split('/')[-1])
-
+			if not props.has_key("volume.policy.desired_mount_point") \
+				or props["volume.policy.desired_mount_point"]=="":
+				logger.debug("---> Ignoring '%s' : has no 'volume.policy.desired_mount_point'" % device_udi)
+				return
+	
+			mountpoint=os.path.join(self.mountpath, props["volume.policy.desired_mount_point"])
 			if os.path.exists(mountpoint):
 				logger.debug("'%s' already exists ---> searching for an avaliable alternative" % mountpoint)
 
@@ -367,4 +368,4 @@ if __name__ == "__main__":
 	
 	logger.info("Starting %(prog)s v%(ver)s...." % {'prog':__productname__, 'ver':__version__})
 
-	halvm().run()
+	HalVM().run()
