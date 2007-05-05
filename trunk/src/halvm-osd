@@ -6,59 +6,171 @@
 # $Header$
 # Author: Martin Parm <parmus@diku.dk>
 
-__author__      = "Martin Parm"
-__email__       = "parmus@diku.dk"
-__version__     = "0.1.0"
+__version__     = "0.2.0"
 __productname__ = "halvm-osd"
-__description__ = "DISM On Screen Display - monitors mounting and unmounting"
+__description__ = "halvm-osd (HalVM On Screen Display) monitors mounting and unmounting"
 
-import sys
+import os,sys
 import signal
-import ConfigParser
-from optparse import OptionParser
-import gobject
 import pyosd
-import dbus
+import gobject, dbus
 if getattr(dbus, "version", (0,0,0)) >= (0,41,0):
 	import dbus.glib
+from optparse import OptionParser
+import ConfigParser
 
-msg=[]
-mount={}
-configfile = ".halvm-osd.rc"
+"""
+@author: Martin Parm
+@copyright: 2006 Martin Parm
+@license: GNU General Public License v2
+@contact: parmus@diku.dk
+@version: 0.2.0
+"""
 
-def property_modified(*args, **kw):
-	try:
-		obj=bus.get_object("org.freedesktop.Hal", kw['device_udi'])
-		if not obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
-			return
+class HalVM_OSD:
+	def __init__(self, configfile):
+		self.mounted_devices=dict()
+		self.msg_queue=[]
+		
+		# Write the default configuration
+		self.config=ConfigParser.ConfigParser()
+		self.config.add_section("placement")
+		self.config.set("placement", "valign", "bottom")
+		self.config.set("placement", "halign", "center")
+		self.config.set("placement", "voffset", "0")
+		self.config.set("placement", "hoffset", "0")
 
-		for change in args[1]:
-			if change[0]=="volume.is_mounted":
-				if not change[1] and obj.GetProperty("volume.is_mounted", dbus_interface="org.freedesktop.Hal.Device"):
-					mount[kw['device_udi']]=obj.GetProperty("volume.mount_point", dbus_interface="org.freedesktop.Hal.Device")
-					msg.append("%s mounted" % mount[kw['device_udi']])
-				else:
-					msg.append("%s unmounted" % mount[kw['device_udi']])
-					del mount[kw['device_udi']]
-				break
-	except dbus_bindings.DBusException:
-		if mount.has_key(kw['device_udi']):
-			msg.append("%s unmounted" % mount[kw['device_udi']])
-			del mount[kw['device_udi']]
-	return
+		self.config.add_section("text")
+		self.config.set("text", "color", "#00FF00")
+		self.config.set("text", "font", "-*-helvetica-*-r-*-*-24-*-*-*-*-*-*-*")
+		self.config.add_section("outline")
+		self.config.set("outline", "color", "#000000")
+		self.config.set("outline", "offset", "1")
+		self.config.add_section("shadow")
+		self.config.set("shadow", "color", "#000000")
+		self.config.set("shadow", "offset", "0")
 
-def device_added(device_udi):
-	obj=bus.get_object("org.freedesktop.Hal", device_udi)
-	if obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
-		if obj.GetProperty("volume.is_mounted", dbus_interface="org.freedesktop.Hal.Device"):
-			mount[device_udi]=obj.GetProperty("volume.mount_point", dbus_interface="org.freedesktop.Hal.Device")
-	return
+		try:
+			# Try to read the config file
+			self.config.readfp(open(configfile, "r"))
+		except IOError:
+			try:
+				# Try to write the config file
+				if not os.path.exists(os.path.dirname(configfile)):
+					os.makedirs(os.path.dirname(configfile))
+				self.config.write(open(configfile, "w"))
+			except IOError:
+				pass
 
-def show_msg():
-	if len(msg) and not osd.is_onscreen():
-		osd.display(msg[0])
-		del msg[0]
-	return 1
+		# Setup the On Screen Display
+		self.osd=pyosd.osd()
+		self.osd.set_colour(self.config.get("text", "color"))
+		self.osd.set_font(self.config.get("text", "font"))
+		self.osd.set_outline_colour(self.config.get("outline", "color"))
+		self.osd.set_outline_offset(self.config.getint("outline", "offset"))
+		self.osd.set_shadow_colour(self.config.get("shadow", "color"))
+		self.osd.set_shadow_offset(self.config.getint("shadow", "offset"))
+		self.osd.set_vertical_offset(self.config.getint("placement", "voffset"))
+		self.osd.set_horizontal_offset(self.config.getint("placement", "hoffset"))
+		try:
+			self.osd.set_pos(['top', 'bottom', 'center'].index(self.config.get("placement","valign").lower()))
+		except ValueError:
+			pass
+
+		try:
+			self.osd.set_align(['left', 'center', 'right'].index(self.config.get("placement","halign").lower()))
+		except ValueError:
+			pass
+
+		return
+	
+	def test(self, text="Testing 1...2...3..."):
+		self.osd.display(text)
+		self.osd.wait_until_no_display()
+		sys.exit(0)
+	
+	def run(self):
+		# Connect to the DBUS
+		self.bus = dbus.SystemBus()
+
+		# Setup the signal handler for the DeviceAdd signal from HAL
+		self.bus.add_signal_receiver(self.device_added,
+					'DeviceAdded',
+					'org.freedesktop.Hal.Manager',
+					'org.freedesktop.Hal',
+					'/org/freedesktop/Hal/Manager')
+
+		# Setup the signal handler for the PropertyModified signal from HAL
+		self.bus.add_signal_receiver(self.property_modified,
+					'PropertyModified',
+					'org.freedesktop.Hal.Device',
+					'org.freedesktop.Hal',
+					None,
+					path_keyword="device_udi")
+
+		# Add existing devices
+		hal_manager_obj = self.bus.get_object("org.freedesktop.Hal", "/org/freedesktop/Hal/Manager")
+		hal_manager = dbus.Interface(hal_manager_obj, "org.freedesktop.Hal.Manager")
+		for device_udi in hal_manager.GetAllDevices():
+			obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
+			if not obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
+				continue
+			
+			props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
+			if not props["volume.is_mounted"]:
+				continue
+			
+			self.mounted_devices[device_udi]=props['volume.mount_point']
+
+		# Connect the OSD timer
+		gobject.timeout_add(500, self.show_msg)
+		
+		# Enter the mainloop
+		mainloop = gobject.MainLoop()
+		try:
+			mainloop.run()
+		except KeyboardInterrupt:
+			# Ignore this. The signal handler will do the rest.
+			pass
+		
+		# We should never go here
+		sys.exit(1)
+
+	def device_added(self, device_udi):
+		obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
+		if obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
+			props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
+			if props["volume.is_mounted"]:
+				self.mounted_devices[device_udi]=props["volume.mount_point"]
+				self.msg_queue.append("%s mounted" % props["volume.mount_point"])
+		return
+
+	def property_modified(self, *args, **kw):
+		device_udi=kw['device_udi']
+		try:
+			obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
+			props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
+
+			for change in args[1]:
+				if change[0]=="volume.is_mounted":
+					if not change[1] and props["volume.is_mounted"]:
+						self.mounted_devices[device_udi]=props["volume.mount_point"]
+						self.msg_queue.append("%s mounted" % props["volume.mount_point"])
+					else:
+						self.msg_queue.append("%s unmounted" % self.mounted_devices[device_udi])
+						del self.mounted_devices[device_udi]
+					break
+		except dbus_bindings.DBusException:
+			if self.mounted_devices.has_key(device_udi):
+				self.msg_queue.append("%s unmounted" % self.mounted_devices[device_udi])
+				del self.mounted_devices[device_udi]
+		return
+
+	def show_msg(self):
+		if len(self.msg_queue) and not self.osd.is_onscreen():
+			self.osd.display(self.msg_queue[0])
+			del self.msg_queue[0]
+		return 1
 
 def shutdown(signum, frame):
 	# Exit the mainloop
@@ -66,94 +178,16 @@ def shutdown(signum, frame):
 	return
 
 if __name__ == "__main__":
-	mainloop = gobject.MainLoop()
-
 	# Setup the signal handler
 	signal.signal(signal.SIGINT, shutdown)
 	signal.signal(signal.SIGTERM, shutdown)
 
-	parser = OptionParser()
+	parser = OptionParser(version="%prog "+str(__version__))
 	parser.add_option("--test", dest="testosd", action="store_true", help="Test the OSD configuration")
 	(options, args) = parser.parse_args()
-	
-	# Write the default configuration
-	config=ConfigParser.ConfigParser()
-	config.add_section("placement")
-	config.set("placement", "valign", "bottom")
-	config.set("placement", "halign", "center")
-	config.set("placement", "voffset", "0")
-	config.set("placement", "hoffset", "0")
 
-	config.add_section("text")
-	config.set("text", "color", "#00FF00")
-	config.set("text", "font", "-*-helvetica-*-r-*-*-24-*-*-*-*-*-*-*")
-	config.add_section("outline")
-	config.set("outline", "color", "#000000")
-	config.set("outline", "offset", "1")
-	config.add_section("shadow")
-	config.set("shadow", "color", "#000000")
-	config.set("shadow", "offset", "0")
-
-	try:
-		# Try to read the config file
-		config.readfp(open(configfile, "r"))
-	except IOError:
-		try:
-			# Try to write the config file
-			config.write(open(configfile, "w"))
-		except IOError:
-			pass
-
-	# Setup the On Screen Display
-	osd=pyosd.osd()
-	osd.set_colour(config.get("text", "color"))
-	osd.set_font(config.get("text", "font"))
-	osd.set_outline_colour(config.get("outline", "color"))
-	osd.set_outline_offset(config.getint("outline", "offset"))
-	osd.set_shadow_colour(config.get("shadow", "color"))
-	osd.set_shadow_offset(config.getint("shadow", "offset"))
-	osd.set_vertical_offset(config.getint("placement", "voffset"))
-	osd.set_horizontal_offset(config.getint("placement", "hoffset"))
-	try:
-		osd.set_pos(['top', 'bottom', 'center'].index(config.get("placement","valign").lower()))
-	except ValueError:
-		pass
-
-	try:
-		osd.set_align(['left', 'center', 'right'].index(config.get("placement","halign").lower()))
-	except ValueError:
-		pass
-
+	halvm_osd=HalVM_OSD(os.path.join(os.environ['HOME'], '.config', '.halvm-osd.rc'))
 	if options.testosd:
-		osd.display("Testing 1...2...3...")
-		osd.wait_until_no_display()
-		sys.exit(0)
-
+		halvm_osd.test()
 	
-	# Add existing devices
-	bus = dbus.SystemBus()
-	hal_manager_obj = bus.get_object("org.freedesktop.Hal", "/org/freedesktop/Hal/Manager")
-	hal_manager = dbus.Interface(hal_manager_obj, "org.freedesktop.Hal.Manager")
-	for device_udi in hal_manager.GetAllDevices():
-		device_added(device_udi)
-
-	# Setup the signal handler for the DeviceAdd signal from HAL
-	bus.add_signal_receiver(device_added,
-							'DeviceAdded',
-							'org.freedesktop.Hal.Manager',
-							'org.freedesktop.Hal',
-							'/org/freedesktop/Hal/Manager')
-
-	# Setup the signal handler for the PropertyModified signal from HAL
-	bus.add_signal_receiver(property_modified,
-							'PropertyModified',
-							'org.freedesktop.Hal.Device',
-							'org.freedesktop.Hal',
-							None,
-							path_keyword="device_udi")
-
-	# Connect the OSD timer
-	gobject.timeout_add(500, show_msg)
-
-	# Enter the mainloop
-	mainloop.run()
+	halvm_osd.run()
