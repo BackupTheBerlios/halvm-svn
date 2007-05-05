@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<deviceinfo version="0.2">
+  <device>
+    <match key="info.category" string="volume">
+      <match key="@info.parent:storage.hotpluggable" bool="true">
+        <!-- Only create mount-points for volumes we know how to mount -->
+        <match key="volume.fstype" empty="false">
+          <!-- Create an empty key if it doesn't already exists -->
+          <match key="volume.policy.desired_mount_point" exists="false">
+            <merge key="volume.policy.desired_mount_point" type="string"></merge>
+          </match>
+
+          <match key="@info.parent:info.category" string="portable_audio_player">
+            <!-- Match for the Apple iPod -->
+            <match key="@info.parent:portable_audio_player.type" string="ipod">
+              <merge key="volume.policy.desired_mount_point" type="string">Apple iPod</merge>
+            </match>
+
+            <!-- Try using the product name -->
+            <match key="volume.policy.desired_mount_point" empty="true">
+              <merge key="volume.policy.desired_mount_point" type="copy_property">@info.parent:info.product</merge>
+            </match>
+            
+            <!-- If everything else fail, then simple call it an Audio Player -->
+            <match key="volume.policy.desired_mount_point" empty="true">
+              <merge key="volume.policy.desired_mount_point" type="string">Portable Audio Player</merge>
+            </match>
+          </match>
+
+          <!-- Use the volume label, if there is any -->
+          <match key="volume.policy.desired_mount_point" empty="true">
+            <match key="volume.label" empty="false">
+              <merge key="volume.policy.desired_mount_point" type="copy_property">volume.label</merge>
+            </match>
+          </match>
+
+          <!-- Try using the product name -->
+          <match key="volume.policy.desired_mount_point" empty="true">
+            <merge key="volume.policy.desired_mount_point" type="copy_property">@info.parent:info.product</merge>
+          </match>
+
+          <!-- Last resort -->
+          <match key="volume.policy.desired_mount_point" empty="true">
+            <merge  key="volume.policy.desired_mount_point" type="copy_property">@info.parent:storage.bus</merge>
+            <append key="volume.policy.desired_mount_point" type="string">_</append>
+            <append key="volume.policy.desired_mount_point" type="copy_property">@info.parent:storage.drive_type</append>
+          </match>
+
+        </match>
+      </match>
+    </match>
+  </device>
+</deviceinfo>

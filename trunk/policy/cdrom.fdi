@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<deviceinfo version="0.2">
+  <device>
+    <match key="info.category" string="volume">
+      <match key="volume.is_disc" bool="true">
+        <!-- Only create mount-points for volumes we know how to mount -->
+        <match key="volume.fstype" empty="false">
+          <!-- Create an empty key if it doesn't already exists -->
+          <match key="volume.policy.desired_mount_point" exists="false">
+            <merge key="volume.policy.desired_mount_point" type="string"></merge>
+          </match>
+
+          <!-- Use the volume label, if there is any -->
+          <match key="volume.policy.desired_mount_point" empty="true">
+            <match key="volume.label" empty="false">
+              <merge key="volume.policy.desired_mount_point" type="copy_property">volume.label</merge>
+            </match>
+          </match>
+
+          <!-- Try using the product name -->
+          <match key="volume.policy.desired_mount_point" empty="true">
+            <merge key="volume.policy.desired_mount_point" type="copy_property">@info.parent:info.product</merge>
+          </match>
+        </match>
+      </match>
+    </match>
+  </device>
+</deviceinfo>
