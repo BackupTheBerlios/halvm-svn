@@ -1,0 +1,44 @@
+.\" Process this file with
+.\" groff -man -Tascii halvm.8
+.\"
+.TH DISM 8 "NOVEMBER 2006" Linux "User Manuals"
+.SH NAME
+halvm \- A simple HAL/DBUS Volume Manager
+.SH SYNOPSIS
+.B halvm [options]
+.SH DESCRIPTION
+.B halvm
+is a very simple volume manager daemon which try to mount all removable devices as they are inserted into the system.
+.B halvm
+uses the ordinary
+.B mount
+command but behaves nicely in collaboration with
+.B pmount
+and
+.B pumount
+, so it's safe to use both on the same system.
+
+.B halvm
+logs it's activity to syslog.
+
+.B halvm
+is heavily inspired by ivman but is aiming for a much simpler solution.
+.B halvm
+is writtin in Python using DBus and HAL.
+.SH OPTIONS
+.IP -f
+Keep in forground. This will prevent halvm from forking into daemon mode and all output will be sent to standard error instead of syslog.
+.IP -v
+Show verbose output.
+.SH FILES
+.I /var/run/halvm.pid
+.RS halvm will log it's own pid to this file.
+.SH BUGS
+.B halvm
+doesn't check for other instances, so you can potentionally run several competing instances of halvm.
+.SH "SEE ALSO"
+.BR mount (8),
+.BR pmount (1),
+.BR pumount (1)
+.SH AUTHOR
+Martin Parm <parmus@diku.dk>

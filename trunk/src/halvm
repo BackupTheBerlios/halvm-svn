@@ -1,0 +1,370 @@
+#!/usr/bin/python
+# Copyright 2006 Martin Parm
+# Distributed under the terms of the GNU General Public License v2
+#
+# Author: Martin Parm <parmus@diku.dk>
+
+__version__     = "0.2.0"
+__productname__ = "halvm"
+__description__ = "A simple HAL/DBus volume manager"
+
+import sys, os, shutil, pwd, re
+import subprocess, signal
+import gobject, dbus
+if getattr(dbus, "version", (0,0,0)) >= (0,41,0):
+	import dbus.glib
+from optparse import OptionParser
+
+import logging
+from logging import handlers
+
+pidfile   = "/var/run/halvm.pid"
+
+"""
+@author: Martin Parm
+@copyright: 2006 Martin Parm
+@license: GNU General Public License v2
+@contact: parmus@diku.dk
+@version: 0.2.0
+
+@todo: Configuration file
+@todo: Make PAM-console optional
+@todo: "Intelligent" mountpoints
+"""
+
+def daemonize():
+	"""
+	Detach the process from the controlling terminal and run it in the
+	background as a daemon.
+	"""
+
+	MAXFD = 1024
+	if (hasattr(os, "devnull")):
+		REDIRECT_TO = os.devnull
+	else:
+		REDIRECT_TO = "/dev/null"
+
+	try:
+		pid = os.fork()
+	except OSError, e:
+		raise Exception, "%s [%d]" % (e.strerror, e.errno)
+
+	if not (pid == 0):	# Kill parent
+		os._exit(0)
+		
+	# The first child
+	os.setsid()
+	try:
+		pid = os.fork()	# Fork a second child.
+	except OSError, e:
+		raise Exception, "%s [%d]" % (e.strerror, e.errno)
+
+	if not (pid == 0):	# Kill the first child
+		os._exit(0)
+		
+	# The second child
+	os.chdir('/')
+	os.umask(0)
+
+	import resource		# Resource usage information.
+	maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+	if (maxfd == resource.RLIM_INFINITY):
+		maxfd = MAXFD
+
+	for fd in range(0, maxfd):
+		try:
+			os.close(fd)
+			pass
+		except OSError:	# ERROR, fd wasn't open to begin with (ignored)
+			pass
+
+	os.open(REDIRECT_TO, os.O_RDWR)	# standard input (0)
+	os.dup2(0, 1)			# standard output (1)
+	os.dup2(0, 2)			# standard error (2)
+
+	return
+
+
+
+class fstab:
+	"""Simple class to extract infomations from /etc/fstab
+	"""
+	def __init__(self):
+		self.matcher=re.compile('^\s*((/\w+)+)\s+((/)|(/\w+)+|(none))\s+(\w+)\s+([\w,]+)\s+\d\s+\d')
+		self.refresh()
+		return
+	
+	def refresh(self):
+		"""Refresh the entries from /etc/fstab.
+		"""
+		self.entries=dict()
+		for entry in map(self.matcher.match, open('/etc/fstab').readlines()):
+			if not entry:
+				continue
+			
+			# print entry.groups()
+			self.entries[entry.group(1)]=[entry.group(3), entry.group(7), entry.group(8)]
+		return
+	
+	def has_device(self, device):
+		"""Check whether a device in handled by /etc/fstab.
+		
+		@param device: Fully qualified path to device (e.g. '/dev/sda1')
+		@type device: String
+		
+		@return: True if the device is handled by /etc/fstab, false otherwise
+		@rtype: bool
+		"""
+		return self.entries.has_key(device)
+
+class halvm:
+	"""A simple HAL/DBUS volume manager
+	"""
+	def __init__(self):
+		logger=logging.getLogger('halvm')
+
+		self.mountpath = "/media"
+		self.tagfile   = ".created_by_halvm"
+		self.mounted_devices=dict()
+		
+		# Cleaning up
+		for dir in os.listdir(self.mountpath):
+			self.cleanup_mountpoint(os.path.join(self.mountpath, dir))
+				
+		# Connect to the DBUS
+		self.bus = dbus.SystemBus()
+
+		# Add existing devices
+		logger.debug("Adding existing devices...")
+		self.hal_manager_obj = self.bus.get_object("org.freedesktop.Hal", "/org/freedesktop/Hal/Manager")
+		self.hal_manager     = dbus.Interface(self.hal_manager_obj, "org.freedesktop.Hal.Manager")
+		for device_udi in self.hal_manager.GetAllDevices():
+			obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
+			if not obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
+				continue
+			
+			props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
+			if not props["volume.is_mounted"]:
+				logger.debug("'%(info.udi)s' is not mounted" % props)
+				continue
+			
+			logger.debug("'%(info.udi)s' is mounted at '%(volume.mount_point)s'" % props)
+			self.mounted_devices[device_udi]=props['volume.mount_point']
+		return
+	
+	def run(self):
+		logger=logging.getLogger('halvm')
+
+		# Setup the signal handler for the DeviceAdd signal from HAL
+		logger.debug("Registering DeviceAdd signal receiver...")
+		self.bus.add_signal_receiver(self.device_added,
+					'DeviceAdded',
+					'org.freedesktop.Hal.Manager',
+					'org.freedesktop.Hal',
+					'/org/freedesktop/Hal/Manager')
+		logger.debug("Registering DeviceRemove signal receiver...")
+		self.bus.add_signal_receiver(self.device_removed,
+					'DeviceRemoved',
+					'org.freedesktop.Hal.Manager',
+					'org.freedesktop.Hal',
+					'/org/freedesktop/Hal/Manager')
+		logger.debug("Registering PropertyModified signal receiver...")
+		self.bus.add_signal_receiver(self.property_modified,
+					'PropertyModified',
+					'org.freedesktop.Hal.Device',
+					'org.freedesktop.Hal',
+					None,
+					path_keyword="device_udi")
+
+		
+		# Enter the mainloop
+		logger.debug("Entering mainloop...")
+		mainloop = gobject.MainLoop()
+		try:
+			mainloop.run()
+		except KeyboardInterrupt:
+			# Ignore this. The signal handler will do the rest.
+			pass
+		
+		# We should never go here
+		sys.exit(1)
+		
+	def cleanup_mountpoint(self, mountpoint):
+		if not os.path.isdir(mountpoint):
+			logger.debug("'%s' isn't a directory -> ignoring" % mountpoint)
+			return
+		if os.path.ismount(mountpoint):
+			logger.debug("'%s' is still mounted -> ignoring" % mountpoint)
+			return
+		if not self.tagfile in os.listdir(mountpoint):
+			logger.debug("'%s' is not my mountpoint -> ignoreing" % mountpoint)
+			return
+
+		logger.info("Cleaning up '%s'" % mountpoint)
+		shutil.rmtree(mountpoint)
+		return
+	
+
+	def device_removed(self, device_udi):
+		logger=logging.getLogger('halvm')
+		logger.debug('[Device removed] : %s' % device_udi)
+		if self.mounted_devices.has_key(device_udi):
+			self.cleanup_mountpoint(self.mounted_devices[device_udi])
+			del self.mounted_devices[device_udi]
+		
+	def device_added(self, device_udi):
+		"""
+		Callback function for the DeviceAdd signal from HAL
+		This function is executed every time HAL adds a device of any kind
+		"""
+
+		logger=logging.getLogger('halvm')
+		logger.debug('[Device added] : %s' % device_udi)
+
+		# Check if the device is a volume
+		obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
+		if obj.QueryCapability("volume", dbus_interface="org.freedesktop.Hal.Device"):
+			props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
+
+			# Check the this volume should be ignored
+			if props["volume.ignore"]:
+				logger.debug("---> Ignoring %s : reserved for the system" % device_udi)
+				return
+
+			# Check the the volume contains a valid (mountable) filesystem
+			if not props["volume.fsusage"] == "filesystem":
+				logger.debug("---> Ignoring %s : not a filesystem" % device_udi)
+				return
+
+			# Check the the volume is a removable device
+			storage_udi=props["block.storage_device"]
+			if not self.bus.get_object("org.freedesktop.Hal", storage_udi).GetProperty("storage.removable",dbus_interface="org.freedesktop.Hal.Device"):
+				logger.debug("---> Ignoring %s : not removable" % device_udi)
+				return
+			
+			# Check if the volume has already been mounted
+			if props["volume.is_mounted"]:
+				logger.debug("---> Ignoring %s : already mounted" % device_udi)
+				self.mounted_devices[device_udi]=props['volume.mount_point']
+				return
+			
+			# Check if the volume is already handled by fstab
+			if fstab().has_device(props["block.device"]):
+				logger.debug("---> Ignoring '%s' : it has an fstab entry" % device_udi)
+				return
+			
+			# Try to create a suitable mountpoint
+			if props.has_key("volume.policy.desired_mount_point"):
+				mountpoint=os.path.join(self.mountpath, props["volume.policy.desired_mount_point"])
+			else:
+				mountpoint=os.path.join(self.mountpath, props["block.device"].split('/')[-1])
+
+			if os.path.exists(mountpoint):
+				logger.debug("'%s' already exists ---> searching for an avaliable alternative" % mountpoint)
+
+				for i in range(2,9999):
+					if not os.path.exists('_'.join([mountpoint,str(i)])):
+						mountpoint='_'.join([mountpoint,str(i)])
+						break
+				else:
+					logger.error("'No available mountpoint found ---> Ignoring")
+					return
+			os.mkdir(mountpoint)
+			open(os.path.join(mountpoint,self.tagfile), 'w').close()
+			
+			# Try mounting it
+			if os.path.exists('/var/run/console/console.lock'):
+				owner=pwd.getpwnam(open('/var/run/console/console.lock').readline())
+			else:
+				owner=pwd.getpwuid(os.getuid())
+		
+			logger.info("---> mounting %s" % props["block.device"])
+			mountcmd=['mount', '-o', 'uid=%i' % owner.pw_uid, props["block.device"], mountpoint]
+			logger.debug("Executing: %s" % ' '.join(mountcmd))
+			if subprocess.call(mountcmd):
+				logger.error("mount failed (exit code %i)" % result)
+		return
+	
+	def property_modified(self, *args, **kw):
+		logger=logging.getLogger('halvm')
+		
+		device_udi=kw['device_udi']
+		logger.debug("[Property changes] : %(device_udi)s" % vars())
+		obj=self.bus.get_object("org.freedesktop.Hal", device_udi)
+		props=obj.GetAllProperties(dbus_interface="org.freedesktop.Hal.Device")
+		for change in args[1]:
+			if change[0]=="volume.is_mounted":
+				if props[change[0]]:
+					logger.info("'%(info.udi)s' mounted at '%(volume.mount_point)s'" % props)
+					self.mounted_devices[device_udi]=props['volume.mount_point']
+				else:
+					logger.info("'%(device_udi)s' unmounted" % vars())
+					if self.mounted_devices.has_key(device_udi):
+						self.cleanup_mountpoint(self.mounted_devices[device_udi])
+						del self.mounted_devices[device_udi]
+		return
+	
+
+
+def shutdown(signum, frame):
+	"""
+	Simple shutdown function
+	"""
+
+	logger=logging.getLogger('halvm')
+	logger.info("Shutting %s down..." % __productname__)
+
+	if not options.debug:
+		# Remove the pidfile if it exists
+		try:
+			if os.path.isfile(pidfile):
+				os.unlink(pidfile)
+		except IOError, e:
+			logger.error("Unable to delete %(pidfile)s : %(errmsg)s" % {'pidfile':pidfile, 'errmsg':e.strerror})
+	
+	logging.shutdown()
+	# Exit the mainloop
+	mainloop.quit()
+	return
+
+
+if __name__ == "__main__":
+	logger=logging.getLogger('halvm')
+	
+	# Parse the commandline arguments
+	parser = OptionParser(version="%prog "+str(__version__))
+	parser.add_option("-f", default=True, action="store_false", dest="daemonize", help="Stay in forground (Don't daemonize)")
+	parser.add_option("-v", default=False, action="store_true", dest="loglevel", help="Show verbose output")
+	(options, args) = parser.parse_args()
+
+	# Set the right loglevel
+	logger.setLevel(logging.INFO-(options.loglevel*10))
+
+	# Setup the signal handler
+	signal.signal(signal.SIGINT, shutdown)
+	signal.signal(signal.SIGTERM, shutdown)
+
+	if options.daemonize:
+		# Setup the logger for syslogging
+		handler=logging.handlers.SysLogHandler(address='/dev/log')
+		handler.setFormatter(logging.Formatter('%(name)s[%(process)s]: [%(levelname)s] %(message)s'))
+		logger.addHandler(handler)
+		
+		# Make myself a daemon
+		daemonize()
+
+		# Try to save to pid (for use in init-scripts)
+		try:
+			print >> open(pidfile, "w"), os.getpid()
+		except IOError, e:
+			logger.error("Unable to write pid to %(pidfile)s : %(errmsg)s" % {'pidfile':pidfile, 'errmsg':e.strerror})
+			sys.exit(e.errno)
+	else:
+		# Setup the logger for stream logging
+		handler=logging.StreamHandler()
+		handler.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+		logger.addHandler(handler)
+	
+	logger.info("Starting %(prog)s v%(ver)s...." % {'prog':__productname__, 'ver':__version__})
+
+	halvm().run()
