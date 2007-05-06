@@ -25,6 +25,8 @@ import ConfigParser
 @license: GNU General Public License v2
 @contact: parmus@diku.dk
 @version: 0.2.0
+
+@todo: True U{XDG<http://standards.freedesktop.org/basedir-spec/basedir-spec-0.6.html>}-awareness
 """
 
 class HalVM_OSD:
@@ -45,7 +47,7 @@ class HalVM_OSD:
 		self.config.set("text", "font", "-*-helvetica-*-r-*-*-24-*-*-*-*-*-*-*")
 		self.config.add_section("outline")
 		self.config.set("outline", "color", "#000000")
-		self.config.set("outline", "offset", "1")
+		self.config.set("outline", "width", "1")
 		self.config.add_section("shadow")
 		self.config.set("shadow", "color", "#000000")
 		self.config.set("shadow", "offset", "0")
@@ -67,7 +69,7 @@ class HalVM_OSD:
 		self.osd.set_colour(self.config.get("text", "color"))
 		self.osd.set_font(self.config.get("text", "font"))
 		self.osd.set_outline_colour(self.config.get("outline", "color"))
-		self.osd.set_outline_offset(self.config.getint("outline", "offset"))
+		self.osd.set_outline_offset(self.config.getint("outline", "width"))
 		self.osd.set_shadow_colour(self.config.get("shadow", "color"))
 		self.osd.set_shadow_offset(self.config.getint("shadow", "offset"))
 		self.osd.set_vertical_offset(self.config.getint("placement", "voffset"))
@@ -186,7 +188,7 @@ if __name__ == "__main__":
 	parser.add_option("--test", dest="testosd", action="store_true", help="Test the OSD configuration")
 	(options, args) = parser.parse_args()
 
-	halvm_osd=HalVM_OSD(os.path.join(os.environ['HOME'], '.config', '.halvm-osd.rc'))
+	halvm_osd=HalVM_OSD(os.path.join(os.environ['HOME'], '.config', 'halvm-osd.rc'))
 	if options.testosd:
 		halvm_osd.test()
 	
