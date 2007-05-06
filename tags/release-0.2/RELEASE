@@ -1,0 +1,19 @@
+HalVM 0.2 Release Notes
+=======================
+
+	This is the first official release of HalVM on BerliOS. There's nothing
+much to say about it other than "Please go ahead and try it". This version
+has been fairly well tested and should be considered beta-grade software.
+
+	This release has the following limitations:
+
+	- The HalVM daemon depends on PAM-console for setting the ownership of the
+	  mounted volumes. This will be fixed in later versions.
+	
+	- Neither the HalVM daemon nor the HalVM-OSD tool is able to reconnect to
+	  HAL. So if either DBUS or HAL is restarted, then HalVM and HalVM-OSD needs
+	  to be restarted too. I hope to fix this at some point but it have a low
+	  priority.
+
+	- The documentation on the HalVM daemon is still somewhat sparse. This will
+	  be fixed in later versions.
