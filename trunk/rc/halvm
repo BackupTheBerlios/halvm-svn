@@ -9,13 +9,13 @@ depend() {
 }
 
 start() {
-	ebegin "Starting DISM"
-	start-stop-daemon --start --pidfile /var/run/dism.pid --exec /usr/sbin/dism > /dev/null
+	ebegin "Starting HalVM"
+	start-stop-daemon --start --pidfile /var/run/halvm.pid --exec /usr/sbin/halvm > /dev/null
 	eend $?
 }
 
 stop() {
-	ebegin "Stopping DISM"
-	start-stop-daemon --stop --pidfile /var/run/dism.pid
+	ebegin "Stopping HalVM"
+	start-stop-daemon --stop --pidfile /var/run/halvm.pid
 	eend $?
 }
