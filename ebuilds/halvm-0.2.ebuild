@@ -4,7 +4,7 @@
 
 DESCRIPTION="HAL Volume Manager"
 HOMEPAGE="https://developer.berlios.de/projects/halvm/"
-SRC_URI=""
+SRC_URI="http://download.berlios.de/${PN}/${P}.tar.gz"
 LICENSE="GPL-2"
 SLOT="0"
 KEYWORDS="x86"
@@ -22,9 +22,9 @@ src_compile() {
 src_install() {
 	emake install_halvm DESTDIR=${D}
 	if use osd; then
-		emake install_halvm_osd DESTDIR=${D}
+		emake install_halvm-osd DESTDIR=${D}
 	fi
-	if policies; then
+	if use policies; then
 		emake install_policies DESTDIR=${D}
 	fi
 	doinitd rc/halvm
