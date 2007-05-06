@@ -1,0 +1,57 @@
+Requirements
+============
+
+	The HalVM daemon has the following requirements:
+
+	- Python (tested with Python 2.4)
+	- HAL (tested with Hal 0.5.7)
+	- DBUS with Python bindings (tested with DBUS 1.0.2 and DBUS-python 0.71)
+
+
+	To use the HalVM-OSD notification tool you also need:
+
+	- PyOSD (tested with PyOSD 0.2.14)
+	- libXosd (tested with libXosd 2.2.14)
+
+
+Basic Installation
+==================
+
+	HalVM comes with a simple Makefile which can do the installation for you.
+If you just want to install everything in the package, then simply execute 
+`make install'. This will install HalVM, HalVM-OSD (a small notification tool)
+and some HAL policies. If you only want to install parts of HalVM (e.g. omit the
+HAL policies), please see the next section.
+
+	The Makefile is $DESTDIR aware, so you can use it with e.g. Portage (Gentoo's
+package system).
+
+
+Advanced Installation
+=====================
+    
+	More advanced may want to only install parts of HalVM. This can be done as
+following:
+
+	1. Execute `make install_halvm' to install the HalVM daemon.
+
+	2. Execute `make install_halvm-osd' to install the HalVM-OSD notification
+	   tool.
+
+	3. Execute `make install_policies' to install the HAL policies.
+
+
+Starting HalVM (Gentoo users)
+=============================
+
+	HalVM comes with a rc-script for Gentoo Linux. Simply rc/halvm to
+/etc/init.d and add it to a runlevel (e.g. default). This is done automatically
+by the HalVM ebuild from the HalVM-website.
+
+
+Starting HalVM (Other systems)
+==============================
+
+	HalVM is a daemon, which should be run by the root user. It's important
+that it gets started after HAL and DBUS, and if you restart any of those then
+HalVM needs to be restarted too.
