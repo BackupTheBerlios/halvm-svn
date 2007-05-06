@@ -1,0 +1,83 @@
+.\" Process this file with
+.\" groff -man -Tascii halvm-dism.8
+.\"
+.TH HALVM-OSD 1 "MAY 2007" Linux "User Manuals"
+.SH NAME
+halvm-osd \- HalVM On Screen Display
+.SH SYNOPSIS
+.B halvm-osd [options]
+.SH DESCRIPTION
+.B halvm-osd
+is a small mount notification utility. It simply put a small OSD notice of the screen whenever a volume is mounted or unmounted.
+.B halvm-osd
+is written in 
+.B Python
+and uses 
+.B HAL,
+.B DBus
+and
+.B PyOSD.
+.B halvm-osd
+has been developed for use with
+.BR halvm (8)
+but it will work with any volume managers or mounting tool, as it gets informations directly from
+.B HAL.
+.SH OPTIONS
+.IP --test
+Test the OSD-settings and then quit.
+.SH CONFIGURATION
+.B halvm-osd
+keeps it's configuration in
+.I ~/.config/halvm-osd.rc
+which is created the first time a user executes
+.B halvm-osd.
+The configuration file is divided into sections each containing 
+.I key=value
+pairs.
+.SS [text]
+This section contains the basic text properties for the OSD.
+.TP
+.BI color
+Set the OSD text color. The color is set an RGB value. The default is "#00FF00" (bright green).
+.TP
+.BI font
+Set the OSD text font. The default is "-*-helvetica-*-r-*-*-24-*-*-*-*-*-*-*".
+.SS [shadow]
+The OSD text can be given a shadow. This section contains the shadow properties.
+.TP
+.BI color
+Set the text shadow's color. The color is set an RGB value. The default is "#000000" (black).
+.TP
+.BI offset
+Set the text shadow's offset. The default is "0" (no shadow).
+.SS [placement]
+This section contains the OSD placement properties. The placement is decided by setting a (horizontal and vertical) placement policy and a (horizontal and vertical) offset.
+.TP
+.BI voffset
+Set the text's vertical offset in pixel. The default is "0".
+.TP
+.BI halign
+Set the text's vertical placement policy. Legal values are "left", "center" and "right". The default is "center".
+.TP
+.BI hoffset
+Set the text's horizontal offset in pixel. The default is "0". 
+.TP 
+.BI valign
+Set the text's horizontal placement. Legal values are "top", "center" and "bottom". The default is "bottom".
+.SS [outline]
+The OSD text can be given an outline. This section contains the outline properties.
+.TP
+.BI color
+Set the text outline's color. The color is set an RGB value. The default is "#000000" (black).
+.TP
+.BI width
+Set the text outline width in pixels. 0 means no outline. The default is "1".
+.SH FILES
+.I ~/.config/halvm-osd.rc
+.RS halvm-osd's configuration file
+.SH BUGS
+None that I know of so far.
+.SH "SEE ALSO"
+.BR halvm (8)
+.SH AUTHOR
+Martin Parm <parmus@parmus.dk>
