@@ -1,0 +1,85 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<head>
+	<title>HalVM - HAL Volume Manager</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+	<style type="text/css">
+		body{
+			padding: 20px 50px;
+			background: #DBE8FF;
+			color: #000000;
+		}
+		p{
+			margin: 5px 10px;
+		}
+		img{
+			border: 0px none #ffffff;
+		}
+		h1{
+			text-align: center;
+		}
+		#footer{
+			text-align: right;
+			margin: 0px;
+		}
+		#page{
+			border:1px solid #000000;
+			background: #FFFFFF;
+			color: #000000;
+			padding: 20px;
+		}
+	</style>
+</head>
+<body>
+	<div id="page">
+		<h1>HalVM - HAL Volume Manager</h1>
+		<h2>About</h2>
+		<p>HalVM is a very simple volume manager daemon which try to mount all
+		removable devices as they are inserted into the system. HalVM uses the
+		ordinary mount command but behaves nicely in collaboration with pmount
+		and pumount, so it's safe to use both on the same system.
+
+		HalVM logs it's activity to syslog. HalVM is heavily inspired by ivman
+		but is aiming for a much simpler solution. HalVM is writtin in Python
+		using DBus and HAL.</p>
+
+		<p>HalVM also comes with a small mount notification utility called
+		HalVM-OSD. HalVM-OSB simply put a small OSD notice of the screen
+		whenever a volume is mounted or unmounted. HalVM-OSD is written in
+		Python and uses HAL, DBus and PyOSD.  HalVM-OSD has been developed for
+		use with HalVM but it will work with any volume managers or mounting
+		tool, as it gets informations directly from HAL.</p>
+
+
+		<h2>Requirements</h2>
+
+		<p>The HalVM daemon has the following requirements:</p>
+
+		<ul>
+			<li><a href="http://www.python.org/">Python</a> (tested with Python
+			2.4)</li>
+			<li><a href="http://www.freedesktop.org/Software/hal">HAL</a>
+			(tested with Hal 0.5.7)</li>
+			<li><a href="http://www.freedesktop.org/wiki/Software/dbus">DBUS</a>
+			with <a	href="http://www.freedesktop.org/wiki/Software/DBusBindings">
+			Python bindings</a> (tested with DBUS 1.0.2 and DBUS-python	0.71)
+			</li>
+		</ul>
+
+		<p>To use the HalVM-OSD notification tool you also need:</p>
+		<ul>
+			<li><a href="http://repose.cx/pyosd/">PyOSD</a> (tested with PyOSD
+			0.2.14)</li>
+			<li><a href="http://www.ignavus.net/software.html">libXosd</a>
+			(tested with libXosd 2.2.14)</li>
+		</ul>
+
+		<h2>Download</h2>
+		<p>Get the latest release at the <a href="https://developer.berlios.de/project/showfiles.php?group_id=8422">BerliOS	Developer pages</a></p>
+
+		<p id="footer"><a href="http://developer.berlios.de"> 
+		<img src="http://developer.berlios.de/bslogo.php?group_id=8422" alt="BerliOS Logo" />
+	</a></p>
+	</div>
+</body>
+</html>
